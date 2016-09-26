@@ -47,7 +47,9 @@ case class BroadcastExchangeExec(
     "dataSize" -> SQLMetrics.createMetric(sparkContext, "data size (bytes)"),
     "collectTime" -> SQLMetrics.createMetric(sparkContext, "time to collect (ms)"),
     "buildTime" -> SQLMetrics.createMetric(sparkContext, "time to build (ms)"),
-    "broadcastTime" -> SQLMetrics.createMetric(sparkContext, "time to broadcast (ms)"))
+    "broadcastTime" -> SQLMetrics.createMetric(sparkContext, "time to broadcast (ms)"),
+    "collect_build_broadcastTime" -> SQLMetrics.createMetric(sparkContext,
+      "time to collect, build and broadcast (ms) in executor broadcast"))
 
   override def outputPartitioning: Partitioning = BroadcastPartitioning(mode)
 
@@ -81,7 +83,7 @@ case class BroadcastExchangeExec(
             val res = child.execute().coalesce(1).mapPartitions { iter =>
               Seq(mode.transform(iter.toArray)).iterator
             }.broadcast()
-            longMetric("collect+build+broadcast Time") += (System.nanoTime() - before) / 1000000
+            longMetric("collect_build_broadcastTime") += (System.nanoTime() - before) / 1000000
             res
           } else {
             val beforeCollect = System.nanoTime()
