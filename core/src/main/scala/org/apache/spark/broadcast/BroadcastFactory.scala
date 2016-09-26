@@ -18,9 +18,9 @@
 package org.apache.spark.broadcast
 
 import scala.reflect.ClassTag
-
 import org.apache.spark.SecurityManager
 import org.apache.spark.SparkConf
+import org.apache.spark.rdd.RDD
 
 /**
  * An interface for all the broadcast implementations in Spark (to allow
@@ -40,6 +40,18 @@ private[spark] trait BroadcastFactory {
    * @param id unique id representing this broadcast variable
    */
   def newBroadcast[T: ClassTag](value: T, isLocal: Boolean, id: Long): Broadcast[T]
+
+  /**
+    * create a new broadcast variable with a specified id. The different of the origin interface
+    * is that there is a new param `persist` to tell the BroadCast should persist block piece into
+    * underlying fs or not. If the BroadCast had not override this method, use the origin interface.
+    * Now only the TorrentBroadcast has use this interface for the function rdd.broadcast.
+    */
+  def newBroadcast[T: ClassTag](
+      value: T,
+      isLocal: Boolean,
+      id: Long,
+      isExecutorSide: Boolean): Broadcast[T]
 
   def unbroadcast(id: Long, removeFromDriver: Boolean, blocking: Boolean): Unit
 

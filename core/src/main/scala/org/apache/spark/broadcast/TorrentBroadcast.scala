@@ -27,6 +27,7 @@ import scala.util.Random
 import org.apache.spark._
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.CompressionCodec
+import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.storage.{BlockId, BroadcastBlockId, StorageLevel}
 import org.apache.spark.util.{ByteBufferInputStream, Utils}
@@ -53,7 +54,7 @@ import org.apache.spark.util.io.{ChunkedByteBuffer, ChunkedByteBufferOutputStrea
  * @param obj object to broadcast
  * @param id A unique identifier for the broadcast variable.
  */
-private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
+private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long, isExecutorSide: Boolean)
   extends Broadcast[T](id) with Logging with Serializable {
 
   /**
@@ -144,6 +145,7 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
               blocks(pid) = b
             case None =>
               throw new SparkException(s"Failed to get $pieceId of $broadcastId")
+
           }
       }
     }
@@ -183,7 +185,15 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long)
         case None =>
           logInfo("Started reading broadcast variable " + id)
           val startTimeMs = System.currentTimeMillis()
-          val blocks = readBlocks().flatMap(_.getChunks())
+          val blocks = try {
+            readBlocks().flatMap(_.getChunks())
+          } catch {
+            case e: SparkException if isExecutorSide =>
+              val tc = TaskContext.get.asInstanceOf[TaskContextImpl]
+              val (stageId, stageAttemptId) = (tc.stageId, tc.stageAttemptId)
+              SparkEnv.get.blockManager.master.recoverBlocks(id, stageId, stageAttemptId)
+              readBlocks().flatMap(_.getChunks())
+          }
           logInfo("Reading broadcast variable " + id + " took" + Utils.getUsedTimeMs(startTimeMs))
 
           val obj = TorrentBroadcast.unBlockifyObject[T](

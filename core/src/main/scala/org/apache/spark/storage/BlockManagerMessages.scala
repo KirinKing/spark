@@ -19,8 +19,11 @@ package org.apache.spark.storage
 
 import java.io.{Externalizable, ObjectInput, ObjectOutput}
 
+import org.apache.spark.rdd.RDD
 import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.util.Utils
+
+import scala.reflect.ClassTag
 
 private[spark] object BlockManagerMessages {
   //////////////////////////////////////////////////////////////////////////////////
@@ -89,6 +92,9 @@ private[spark] object BlockManagerMessages {
   case class GetLocations(blockId: BlockId) extends ToBlockManagerMaster
 
   case class GetLocationsMultipleBlockIds(blockIds: Array[BlockId]) extends ToBlockManagerMaster
+
+  case class RecoverBroadcast(id: Long, stageId: Int, stageAttemptId: Int)
+    extends ToBlockManagerMaster
 
   case class GetPeers(blockManagerId: BlockManagerId) extends ToBlockManagerMaster
 

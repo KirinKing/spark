@@ -19,21 +19,20 @@ package org.apache.spark.rdd
 
 import java.util.Random
 
-import scala.collection.{mutable, Map}
+import scala.collection.{Map, mutable}
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Codec
 import scala.language.implicitConversions
-import scala.reflect.{classTag, ClassTag}
-
+import scala.reflect.{ClassTag, classTag}
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus
 import org.apache.hadoop.io.{BytesWritable, NullWritable, Text}
 import org.apache.hadoop.io.compress.CompressionCodec
 import org.apache.hadoop.mapred.TextOutputFormat
-
 import org.apache.spark._
 import org.apache.spark.Partitioner._
 import org.apache.spark.annotation.{DeveloperApi, Since}
 import org.apache.spark.api.java.JavaRDD
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.partial.BoundedDouble
 import org.apache.spark.partial.CountEvaluator
@@ -42,8 +41,7 @@ import org.apache.spark.partial.PartialResult
 import org.apache.spark.storage.{RDDBlockId, StorageLevel}
 import org.apache.spark.util.{BoundedPriorityQueue, Utils}
 import org.apache.spark.util.collection.OpenHashMap
-import org.apache.spark.util.random.{BernoulliCellSampler, BernoulliSampler, PoissonSampler,
-  SamplingUtils}
+import org.apache.spark.util.random.{BernoulliCellSampler, BernoulliSampler, PoissonSampler, SamplingUtils}
 
 /**
  * A Resilient Distributed Dataset (RDD), the basic abstraction in Spark. Represents an immutable,
@@ -911,6 +909,46 @@ abstract class RDD[T: ClassTag](
   def collect(): Array[T] = withScope {
     val results = sc.runJob(this, (iter: Iterator[T]) => iter.toArray)
     Array.concat(results: _*)
+  }
+
+  /**
+    * Broadcast a read-only variable to the cluster from executor, returning a
+    * [[org.apache.spark.broadcast.Broadcast]] object for reading it in distributed functions.
+    * The variable will be sent to each cluster only once.
+    *
+    * Note: this will only broadcast the first element of the rdd.
+    */
+  private[spark] def reBroadcast(id: Long) {
+    assert(partitions.length == 1, s"broadcast rdd should" +
+      s" only have one partitions, but now ${partitions.length}!")
+    val bc = mapPartitions { iter =>
+      assert(iter.hasNext)
+      Iterator(SparkEnv.get.broadcastManager.newBroadcast[T](iter.next(), false, id, true))
+    }.collect().head
+    val callSite = sc.getCallSite
+    logInfo("Rebroadcast " + bc.id + " from " + callSite.shortForm)
+  }
+
+  /**
+    * Broadcast a read-only variable to the cluster from executor, returning a
+    * [[org.apache.spark.broadcast.Broadcast]] object for reading it in distributed functions.
+    * The variable will be sent to each cluster only once.
+    *
+    * Note: this will only broadcast the first element of the rdd.
+    */
+  def broadcast(): Broadcast[T] = withScope {
+    assert(partitions.length == 1, s"broadcast rdd should" +
+      s" only have one partitions, but now ${partitions.length}!")
+    val id = sc.env.broadcastManager.newBroadcastId
+    val bc = mapPartitions { iter =>
+      assert(iter.hasNext)
+      Iterator(SparkEnv.get.broadcastManager.newBroadcast[T](iter.next(), false, id, true))
+    }.collect().head
+    SparkEnv.get.blockManager.master.addExecutorBroadcast(id, this.asInstanceOf[RDD[Any]])
+    val callSite = sc.getCallSite
+    logInfo("Created broadcast " + bc.id + " from " + callSite.shortForm)
+    sc.cleaner.foreach(_.registerBroadcastForCleanup(bc))
+    bc
   }
 
   /**

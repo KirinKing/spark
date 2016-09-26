@@ -20,9 +20,9 @@ package org.apache.spark.storage
 import scala.collection.Iterable
 import scala.collection.generic.CanBuildFrom
 import scala.concurrent.Future
-
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.internal.Logging
+import org.apache.spark.rdd.RDD
 import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.storage.BlockManagerMessages._
 import org.apache.spark.util.{RpcUtils, ThreadUtils}
@@ -35,6 +35,16 @@ class BlockManagerMaster(
   extends Logging {
 
   val timeout = RpcUtils.askRpcTimeout(conf)
+
+  var masterEndpoint: BlockManagerMasterEndpoint = null
+
+  def setMasterEndpoint(me: BlockManagerMasterEndpoint): Unit = {
+    masterEndpoint = me
+  }
+
+  def addExecutorBroadcast(id: Long, rdd: RDD[Any]): Unit = {
+    masterEndpoint.addBroadcastRdd(id, rdd)
+  }
 
   /** Remove a dead executor from the driver endpoint. This is only called on the driver side. */
   def removeExecutor(execId: String) {
@@ -79,6 +89,10 @@ class BlockManagerMaster(
   def getLocations(blockIds: Array[BlockId]): IndexedSeq[Seq[BlockManagerId]] = {
     driverEndpoint.askWithRetry[IndexedSeq[Seq[BlockManagerId]]](
       GetLocationsMultipleBlockIds(blockIds))
+  }
+
+  def recoverBlocks(id: Long, stageId: Int, stageAttemptId: Int): Boolean = {
+    driverEndpoint.askWithRetry[Boolean](RecoverBroadcast(id, stageId, stageAttemptId))
   }
 
   /**

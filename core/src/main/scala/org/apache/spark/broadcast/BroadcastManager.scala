@@ -20,9 +20,9 @@ package org.apache.spark.broadcast
 import java.util.concurrent.atomic.AtomicLong
 
 import scala.reflect.ClassTag
-
 import org.apache.spark.{SecurityManager, SparkConf}
 import org.apache.spark.internal.Logging
+import org.apache.spark.rdd.RDD
 
 private[spark] class BroadcastManager(
     val isDriver: Boolean,
@@ -52,8 +52,20 @@ private[spark] class BroadcastManager(
 
   private val nextBroadcastId = new AtomicLong(0)
 
+  // Called from driver to create new broadcast id
+  def newBroadcastId: Long = nextBroadcastId.getAndIncrement()
+
   def newBroadcast[T: ClassTag](value_ : T, isLocal: Boolean): Broadcast[T] = {
     broadcastFactory.newBroadcast[T](value_, isLocal, nextBroadcastId.getAndIncrement())
+  }
+
+  // Called from executor to create broadcast with specified id
+  def newBroadcast[T: ClassTag](
+      value_ : T,
+      isLocal: Boolean,
+      id: Long,
+      isExecutorSide: Boolean): Broadcast[T] = {
+    broadcastFactory.newBroadcast[T](value_, isLocal, id, isExecutorSide)
   }
 
   def unbroadcast(id: Long, removeFromDriver: Boolean, blocking: Boolean) {

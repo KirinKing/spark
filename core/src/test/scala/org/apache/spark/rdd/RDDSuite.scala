@@ -48,6 +48,12 @@ class RDDSuite extends SparkFunSuite with SharedSparkContext {
     }
   }
 
+  test("executor broadcast") {
+    val nums = sc.makeRDD(Array(1), 1)
+    val b = nums.broadcast()
+    assert(b.value == 1)
+  }
+
   test("basic operations") {
     val nums = sc.makeRDD(Array(1, 2, 3, 4), 2)
     assert(nums.getNumPartitions === 2)
