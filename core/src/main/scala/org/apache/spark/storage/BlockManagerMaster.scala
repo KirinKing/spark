@@ -37,12 +37,6 @@ class BlockManagerMaster(
 
   val timeout = RpcUtils.askRpcTimeout(conf)
 
-  var masterEndpoint: BlockManagerMasterEndpoint = null
-
-  def setMasterEndpoint(me: BlockManagerMasterEndpoint): Unit = {
-    masterEndpoint = me
-  }
-
   /** Remove a dead executor from the driver endpoint. This is only called on the driver side. */
   def removeExecutor(execId: String) {
     tell(RemoveExecutor(execId))
