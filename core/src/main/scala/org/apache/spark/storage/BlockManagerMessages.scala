@@ -19,11 +19,8 @@ package org.apache.spark.storage
 
 import java.io.{Externalizable, ObjectInput, ObjectOutput}
 
-import org.apache.spark.rdd.RDD
 import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.util.Utils
-
-import scala.reflect.ClassTag
 
 private[spark] object BlockManagerMessages {
   //////////////////////////////////////////////////////////////////////////////////

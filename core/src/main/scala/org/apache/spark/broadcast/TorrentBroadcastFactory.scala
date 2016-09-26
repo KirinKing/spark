@@ -17,9 +17,8 @@
 
 package org.apache.spark.broadcast
 
-import org.apache.spark.rdd.RDD
-
 import scala.reflect.ClassTag
+
 import org.apache.spark.{SecurityManager, SparkConf}
 
 /**
