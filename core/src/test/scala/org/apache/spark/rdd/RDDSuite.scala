@@ -52,6 +52,8 @@ class RDDSuite extends SparkFunSuite with SharedSparkContext {
     val nums = sc.makeRDD(Array(1), 1)
     val b = nums.broadcast()
     assert(b.value == 1)
+
+    sc.stop()
   }
 
   test("basic operations") {
