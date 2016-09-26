@@ -187,8 +187,12 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long, isExecutorS
             readBlocks().flatMap(_.getChunks())
           } catch {
             case e: SparkException if isExecutorSide =>
-              val tc = TaskContext.get.asInstanceOf[TaskContextImpl]
-              val (stageId, stageAttemptId) = (tc.stageId, tc.stageAttemptId)
+              val tc = TaskContext.get
+              val (stageId, stageAttemptId) = if (tc == null) {
+                (-1, -1)
+              } else {
+                (tc.stageId, tc.stageAttemptId)
+              }
               SparkEnv.get.blockManager.master.recoverBlocks(id, stageId, stageAttemptId)
               readBlocks().flatMap(_.getChunks())
           }
