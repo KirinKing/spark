@@ -146,11 +146,6 @@ abstract class TaskContext extends Serializable {
   def stageId(): Int
 
   /**
-   * How many times this stage has been attempted.
-   */
-  def stageAttemptId(): Int
-
-  /**
    * The ID of the RDD partition that is computed by this task.
    */
   def partitionId(): Int

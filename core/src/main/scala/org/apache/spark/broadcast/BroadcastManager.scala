@@ -37,7 +37,7 @@ private[spark] class BroadcastManager(
   // Mapping from broadcast id to executor broadcast rdds.
   private val executorBroadcastRdds = new HashMap[Long, RDD[Any]]
 
-  private val alreadyRecove = new mutable.HashSet[(Int, Int)]
+  private val reBroadcasted = new mutable.HashSet[(Int, Int)]
 
   private var initialized = false
   private var broadcastFactory: BroadcastFactory = null
@@ -88,7 +88,7 @@ private[spark] class BroadcastManager(
   }
 
 
-  def recoverBlocks(id: Long, stageId: Int, stageAttemptId: Int): Boolean = {
+  def reBroadcast(id: Long, stageId: Int, stageAttemptId: Int): Boolean = {
     driverEndpoint.askWithRetry[Boolean](RecoverBroadcast(id, stageId, stageAttemptId))
   }
 
@@ -105,12 +105,12 @@ private[spark] class BroadcastManager(
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
       case RecoverBroadcast(id, stageId, stageAttemptId) =>
         // only allowed recover once for a stage attempt
-        if (!alreadyRecove.contains((stageId, stageAttemptId))) {
-          alreadyRecove.add((stageId, stageAttemptId))
+        if (!reBroadcasted.contains((stageId, stageAttemptId))) {
+          reBroadcasted.add((stageId, stageAttemptId))
           executorBroadcastRdds.get(id).reBroadcast(id)
         }
-        // clear the alreadyRecove to avoid increase infinitly
-        if (alreadyRecove.size > 10000) alreadyRecove.clear()
+        // clear the reBroadcasted to avoid increase infinitly
+        if (reBroadcasted.size > 10000) reBroadcasted.clear()
         context.reply(true)
     }
   }

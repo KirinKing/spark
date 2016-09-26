@@ -191,9 +191,12 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long, isExecutorS
               val (stageId, stageAttemptId) = if (tc == null) {
                 (-1, -1)
               } else {
-                (tc.stageId, tc.stageAttemptId)
+                val tcl = tc.asInstanceOf[TaskContextImpl]
+                (tcl.stageId, tcl.stageAttemptId)
               }
-              SparkEnv.get.broadcastManager.recoverBlocks(id, stageId, stageAttemptId)
+              // pass stageId, stageAttemptId to avoid rebroadcast
+              // multi times for one stage attempt.
+              SparkEnv.get.broadcastManager.reBroadcast(id, stageId, stageAttemptId)
               readBlocks().flatMap(_.getChunks())
           }
           logInfo("Reading broadcast variable " + id + " took" + Utils.getUsedTimeMs(startTimeMs))
