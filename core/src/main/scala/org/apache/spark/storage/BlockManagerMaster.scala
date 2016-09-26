@@ -43,10 +43,6 @@ class BlockManagerMaster(
     masterEndpoint = me
   }
 
-  def addExecutorBroadcast(id: Long, rdd: RDD[Any]): Unit = {
-    masterEndpoint.addBroadcastRdd(id, rdd)
-  }
-
   /** Remove a dead executor from the driver endpoint. This is only called on the driver side. */
   def removeExecutor(execId: String) {
     tell(RemoveExecutor(execId))
@@ -90,10 +86,6 @@ class BlockManagerMaster(
   def getLocations(blockIds: Array[BlockId]): IndexedSeq[Seq[BlockManagerId]] = {
     driverEndpoint.askWithRetry[IndexedSeq[Seq[BlockManagerId]]](
       GetLocationsMultipleBlockIds(blockIds))
-  }
-
-  def recoverBlocks(id: Long, stageId: Int, stageAttemptId: Int): Boolean = {
-    driverEndpoint.askWithRetry[Boolean](RecoverBroadcast(id, stageId, stageAttemptId))
   }
 
   /**

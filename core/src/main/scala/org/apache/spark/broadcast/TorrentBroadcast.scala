@@ -193,7 +193,7 @@ private[spark] class TorrentBroadcast[T: ClassTag](obj: T, id: Long, isExecutorS
               } else {
                 (tc.stageId, tc.stageAttemptId)
               }
-              SparkEnv.get.blockManager.master.recoverBlocks(id, stageId, stageAttemptId)
+              SparkEnv.get.broadcastManager.recoverBlocks(id, stageId, stageAttemptId)
               readBlocks().flatMap(_.getChunks())
           }
           logInfo("Reading broadcast variable " + id + " took" + Utils.getUsedTimeMs(startTimeMs))

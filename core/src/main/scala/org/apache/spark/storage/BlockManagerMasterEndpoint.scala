@@ -53,11 +53,6 @@ class BlockManagerMasterEndpoint(
   // Mapping from block id to the set of block managers that have the block.
   private val blockLocations = new JHashMap[BlockId, mutable.HashSet[BlockManagerId]]
 
-  // Mapping from broadcast id to executor broadcast rdds.
-  private val executorBroadcastRdds = new JHashMap[Long, RDD[Any]]
-
-  private val alreadyRecove = new mutable.HashSet[(Int, Int)]
-
   private val askThreadPool = ThreadUtils.newDaemonCachedThreadPool("block-manager-ask-thread-pool")
   private implicit val askExecutionContext = ExecutionContext.fromExecutorService(askThreadPool)
 
@@ -76,15 +71,6 @@ class BlockManagerMasterEndpoint(
 
     case GetLocationsMultipleBlockIds(blockIds) =>
       context.reply(getLocationsMultipleBlockIds(blockIds))
-
-    case RecoverBroadcast(id, stageId, stageAttemptId) =>
-      if (!alreadyRecove.contains((stageId, stageAttemptId))) {
-        alreadyRecove.add((stageId, stageAttemptId))
-        executorBroadcastRdds.get(id).reBroadcast(id)
-      }
-      // clear the alreadyRecove to avoid increase infinitly
-      if (alreadyRecove.size > 10000) alreadyRecove.clear()
-      context.reply(true)
 
     case GetPeers(blockManagerId) =>
       context.reply(getPeers(blockManagerId))
@@ -141,9 +127,6 @@ class BlockManagerMasterEndpoint(
       }
   }
 
-  def addBroadcastRdd(id: Long, rdd: RDD[Any]): Unit = {
-    executorBroadcastRdds.put(id, rdd)
-  }
   private def removeRdd(rddId: Int): Future[Seq[Int]] = {
     // First remove the metadata for the given RDD, and then asynchronously remove the blocks
     // from the slaves.

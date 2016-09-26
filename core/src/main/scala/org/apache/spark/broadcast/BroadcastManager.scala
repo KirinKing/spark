@@ -17,12 +17,15 @@
 
 package org.apache.spark.broadcast
 
+import java.util.HashMap
 import java.util.concurrent.atomic.AtomicLong
 
+import scala.collection.mutable
 import scala.reflect.ClassTag
-
 import org.apache.spark.{SecurityManager, SparkConf}
 import org.apache.spark.internal.Logging
+import org.apache.spark.rdd.RDD
+import org.apache.spark.rpc.{RpcCallContext, RpcEndpoint, RpcEndpointRef, RpcEnv}
 
 private[spark] class BroadcastManager(
     val isDriver: Boolean,
@@ -30,8 +33,14 @@ private[spark] class BroadcastManager(
     securityManager: SecurityManager)
   extends Logging {
 
+  // Mapping from broadcast id to executor broadcast rdds.
+  private val executorBroadcastRdds = new HashMap[Long, RDD[Any]]
+
+  private val alreadyRecove = new mutable.HashSet[(Int, Int)]
+
   private var initialized = false
   private var broadcastFactory: BroadcastFactory = null
+  var driverEndpoint: RpcEndpointRef = null
 
   initialize()
 
@@ -48,6 +57,7 @@ private[spark] class BroadcastManager(
 
   def stop() {
     broadcastFactory.stop()
+    driverEndpoint.send(StopBroadcastManager)
   }
 
   private val nextBroadcastId = new AtomicLong(0)
@@ -71,4 +81,42 @@ private[spark] class BroadcastManager(
   def unbroadcast(id: Long, removeFromDriver: Boolean, blocking: Boolean) {
     broadcastFactory.unbroadcast(id, removeFromDriver, blocking)
   }
+
+  def addBroadcastRdd(id: Long, rdd: RDD[Any]): Unit = {
+    executorBroadcastRdds.put(id, rdd)
+  }
+
+
+  def recoverBlocks(id: Long, stageId: Int, stageAttemptId: Int): Boolean = {
+    driverEndpoint.askWithRetry[Boolean](RecoverBroadcast(id, stageId, stageAttemptId))
+  }
+
+  // This endpoint is used only for RPC
+  private[spark] class BroadcastManagerEndpoint(
+      override val rpcEnv: RpcEnv) extends RpcEndpoint with Logging {
+
+      override def receive: PartialFunction[Any, Unit] = {
+        case StopBroadcastManager =>
+          logInfo("OutputCommitCoordinator stopped!")
+          stop()
+      }
+
+    override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
+      case RecoverBroadcast(id, stageId, stageAttemptId) =>
+        // only allowed recover once for a stage attempt
+        if (!alreadyRecove.contains((stageId, stageAttemptId))) {
+          alreadyRecove.add((stageId, stageAttemptId))
+          executorBroadcastRdds.get(id).reBroadcast(id)
+        }
+        // clear the alreadyRecove to avoid increase infinitly
+        if (alreadyRecove.size > 10000) alreadyRecove.clear()
+        context.reply(true)
+    }
+  }
 }
+
+object BroadcastManager {
+  val ENDPOINT_NAME = "BroadcastManager"
+}
+case object StopBroadcastManager
+case class RecoverBroadcast(id: Long, stageId: Int, stageAttemptId: Int)

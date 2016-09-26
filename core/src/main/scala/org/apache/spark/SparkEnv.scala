@@ -286,6 +286,8 @@ object SparkEnv extends Logging {
     }
 
     val broadcastManager = new BroadcastManager(isDriver, conf, securityManager)
+    broadcastManager.driverEndpoint = registerOrLookupEndpoint(BroadcastManager.ENDPOINT_NAME,
+      new broadcastManager.BroadcastManagerEndpoint(rpcEnv))
 
     val mapOutputTracker = if (isDriver) {
       new MapOutputTrackerMaster(conf, broadcastManager, isLocal)

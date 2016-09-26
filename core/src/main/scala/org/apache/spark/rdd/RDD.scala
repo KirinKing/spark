@@ -945,7 +945,7 @@ abstract class RDD[T: ClassTag](
       assert(iter.hasNext)
       Iterator(SparkEnv.get.broadcastManager.newBroadcast[T](iter.next(), false, id, true))
     }.collect().head
-    SparkEnv.get.blockManager.master.addExecutorBroadcast(id, this.asInstanceOf[RDD[Any]])
+    SparkEnv.get.broadcastManager.addBroadcastRdd(id, this.asInstanceOf[RDD[Any]])
     val callSite = sc.getCallSite
     logInfo("Created broadcast " + bc.id + " from " + callSite.shortForm)
     sc.cleaner.foreach(_.registerBroadcastForCleanup(bc))
