@@ -79,10 +79,20 @@ case class BroadcastExchangeExec(
       SQLExecution.withExecutionId(sparkContext, executionId) {
         try {
           val broadcasted = if (executorBroadcast) {
+            val moreThanOnePartition = child.execute().partitions.size > 0
             val before = System.nanoTime()
-            val res = child.execute().coalesce(1).mapPartitions { iter =>
-              Seq(mode.transform(iter.map(_.copy()).toArray)).iterator
-            }.broadcast()
+            val res =
+              if (moreThanOnePartition) {
+                child.execute().coalesce(1).mapPartitions { iter =>
+                  Seq(mode.transform(iter.map(_.copy()).toArray)).iterator
+                }.broadcast()
+              } else {
+                // handle the corner case that the child rdd have no partitions
+                // in this case rdd.broadcast will throw a assert error.
+                sparkContext.makeRDD(Array(1), 1).mapPartitions { iter =>
+                  Seq(mode.transform(Array.empty[InternalRow])).iterator
+                }.broadcast()
+              }
             longMetric("collect_build_broadcastTime") += (System.nanoTime() - before) / 1000000
             res
           } else {
