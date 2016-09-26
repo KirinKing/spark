@@ -146,8 +146,8 @@ abstract class TaskContext extends Serializable {
   def stageId(): Int
 
   /**
-    * How many times this stage has been attempted.
-    */
+   * How many times this stage has been attempted.
+   */
   def stageAttemptId(): Int
 
   /**

@@ -915,10 +915,10 @@ abstract class RDD[T: ClassTag](
   }
 
   /**
-    * Re-broadcast the rdd from executor side, this is used when the original broadcast data
-    * lost cases.
-    * Note: this will only broadcast the first element of the rdd.
-    */
+   * Re-broadcast the rdd from executor side, this is used when the original broadcast data
+   * lost cases.
+   * Note: this will only broadcast the first element of the rdd.
+   */
   private[spark] def reBroadcast(id: Long) {
     assert(partitions.length == 1, s"broadcast rdd should" +
       s" only have one partitions, but now ${partitions.length}!")
@@ -931,12 +931,12 @@ abstract class RDD[T: ClassTag](
   }
 
   /**
-    * Broadcast the single value in the rdd to the cluster from executor, returning a
-    * [[org.apache.spark.broadcast.Broadcast]] object for reading it in distributed functions.
-    * The variable will be sent to each cluster only once.
-    *
-    * Note: this will only broadcast the first element of the rdd.
-    */
+   * Broadcast the single value in the rdd to the cluster from executor, returning a
+   * [[org.apache.spark.broadcast.Broadcast]] object for reading it in distributed functions.
+   * The variable will be sent to each cluster only once.
+   *
+   * Note: this will only broadcast the first element of the rdd.
+   */
   def broadcast(): Broadcast[T] = withScope {
     assert(partitions.length == 1, s"broadcast rdd should" +
       s" only have one partitions, but now ${partitions.length}!")
