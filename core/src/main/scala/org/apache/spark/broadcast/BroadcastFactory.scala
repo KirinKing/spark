@@ -43,9 +43,8 @@ private[spark] trait BroadcastFactory {
 
   /**
     * create a new broadcast variable with a specified id. The different of the origin interface
-    * is that there is a new param `persist` to tell the BroadCast should persist block piece into
-    * underlying fs or not. If the BroadCast had not override this method, use the origin interface.
-    * Now only the TorrentBroadcast has use this interface for the function rdd.broadcast.
+    * is that there is a new param `isExecutorSide` to tell the BroadCast it is a executor-side
+    * broadcast and should consider recovery when get block data failed.
     */
   def newBroadcast[T: ClassTag](
       value: T,

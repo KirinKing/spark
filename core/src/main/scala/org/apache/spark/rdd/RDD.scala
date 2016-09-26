@@ -915,10 +915,8 @@ abstract class RDD[T: ClassTag](
   }
 
   /**
-    * Broadcast a read-only variable to the cluster from executor, returning a
-    * [[org.apache.spark.broadcast.Broadcast]] object for reading it in distributed functions.
-    * The variable will be sent to each cluster only once.
-    *
+    * Re-broadcast the rdd from executor side, this is used when the original broadcast data
+    * lost cases.
     * Note: this will only broadcast the first element of the rdd.
     */
   private[spark] def reBroadcast(id: Long) {
@@ -933,7 +931,7 @@ abstract class RDD[T: ClassTag](
   }
 
   /**
-    * Broadcast a read-only variable to the cluster from executor, returning a
+    * Broadcast the single value in the rdd to the cluster from executor, returning a
     * [[org.apache.spark.broadcast.Broadcast]] object for reading it in distributed functions.
     * The variable will be sent to each cluster only once.
     *
