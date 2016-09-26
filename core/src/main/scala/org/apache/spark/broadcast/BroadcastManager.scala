@@ -58,7 +58,7 @@ private[spark] class BroadcastManager(
 
   def stop() {
     broadcastFactory.stop()
-    driverEndpoint.send(StopBroadcastManager)
+    driverEndpoint = null
   }
 
   private val nextBroadcastId = new AtomicLong(0)
@@ -96,12 +96,6 @@ private[spark] class BroadcastManager(
   private[spark] class BroadcastManagerEndpoint(
       override val rpcEnv: RpcEnv) extends RpcEndpoint with Logging {
 
-      override def receive: PartialFunction[Any, Unit] = {
-        case StopBroadcastManager =>
-          logInfo("OutputCommitCoordinator stopped!")
-          stop()
-      }
-
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
       case RecoverBroadcast(id, stageId, stageAttemptId) =>
         // only allowed recover once for a stage attempt
@@ -119,5 +113,4 @@ private[spark] class BroadcastManager(
 object BroadcastManager {
   val ENDPOINT_NAME = "BroadcastManager"
 }
-case object StopBroadcastManager
 case class RecoverBroadcast(id: Long, stageId: Int, stageAttemptId: Int)
