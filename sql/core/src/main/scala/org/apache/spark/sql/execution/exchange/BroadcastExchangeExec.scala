@@ -81,7 +81,7 @@ case class BroadcastExchangeExec(
           val broadcasted = if (executorBroadcast) {
             val before = System.nanoTime()
             val res = child.execute().coalesce(1).mapPartitions { iter =>
-              Seq(mode.transform(iter.toArray)).iterator
+              Seq(mode.transform(iter.map(_.copy()).toArray)).iterator
             }.broadcast()
             longMetric("collect_build_broadcastTime") += (System.nanoTime() - before) / 1000000
             res
