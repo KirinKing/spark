@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable
 import scala.reflect.ClassTag
 
-import org.apache.spark.{SecurityManager, SparkConf}
+import org.apache.spark.{SecurityManager, SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.rpc.{RpcCallContext, RpcEndpoint, RpcEndpointRef, RpcEnv}
@@ -34,10 +34,11 @@ private[spark] class BroadcastManager(
     securityManager: SecurityManager)
   extends Logging {
 
-  // Mapping from broadcast id to executor broadcast rdds.
-  private val executorBroadcastRdds = new HashMap[Long, RDD[Any]]
+  // Mapping from broadcast id to ReBroadcast of executor broadcast.
+  private val executorBroadcasts = new HashMap[Long, ReBroadcast]
 
-  private val reBroadcasted = new mutable.HashSet[(Int, Int)]
+  // a stage attempt that have already reBroadcast a rdd
+  private val reBroadcasted = new mutable.HashSet[(Long, Int, Int)]
 
   private var initialized = false
   private var broadcastFactory: BroadcastFactory = null
@@ -83,10 +84,11 @@ private[spark] class BroadcastManager(
     broadcastFactory.unbroadcast(id, removeFromDriver, blocking)
   }
 
-  def addBroadcastRdd(id: Long, rdd: RDD[Any]): Unit = {
-    executorBroadcastRdds.put(id, rdd)
+  def registerReBroadcast(
+      id: Long,
+      reBroadcast: ReBroadcast): Unit = {
+    executorBroadcasts.put(id, reBroadcast)
   }
-
 
   def reBroadcast(id: Long, stageId: Int, stageAttemptId: Int): Boolean = {
     driverEndpoint.askWithRetry[Boolean](RecoverBroadcast(id, stageId, stageAttemptId))
@@ -99,14 +101,25 @@ private[spark] class BroadcastManager(
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
       case RecoverBroadcast(id, stageId, stageAttemptId) =>
         // only allowed recover once for a stage attempt
-        if (!reBroadcasted.contains((stageId, stageAttemptId))) {
-          reBroadcasted.add((stageId, stageAttemptId))
-          executorBroadcastRdds.get(id).reBroadcast(id)
+        if (!reBroadcasted.contains((id, stageId, stageAttemptId))) {
+          reBroadcasted.add((id, stageId, stageAttemptId))
+          executorBroadcasts.get(id).reBroadcast(id)
         }
         // clear the reBroadcasted to avoid increase infinitly
         if (reBroadcasted.size > 10000) reBroadcasted.clear()
         context.reply(true)
     }
+  }
+}
+
+private[spark] case class ReBroadcast(
+    rdd: RDD[Any],
+    transFunc: Iterator[Any] => Any) extends Logging{
+  def reBroadcast(id: Long): Unit = {
+    val bc = rdd.coalesce(1).mapPartitions { iter =>
+      Iterator(SparkEnv.get.broadcastManager.newBroadcast[Any](transFunc(iter), false, id, true))
+    }.collect().head
+    logWarning("Rebroadcast " + bc.id)
   }
 }
 

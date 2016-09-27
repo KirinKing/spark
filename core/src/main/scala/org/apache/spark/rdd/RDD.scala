@@ -23,7 +23,7 @@ import scala.collection.{mutable, Map}
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Codec
 import scala.language.implicitConversions
-import scala.reflect.{classTag, ClassTag}
+import scala.reflect.{ClassTag, classTag}
 
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus
 import org.apache.hadoop.io.{BytesWritable, NullWritable, Text}
@@ -34,7 +34,7 @@ import org.apache.spark._
 import org.apache.spark.Partitioner._
 import org.apache.spark.annotation.{DeveloperApi, Since}
 import org.apache.spark.api.java.JavaRDD
-import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.broadcast.{Broadcast, ReBroadcast}
 import org.apache.spark.internal.Logging
 import org.apache.spark.partial.BoundedDouble
 import org.apache.spark.partial.CountEvaluator
@@ -915,39 +915,31 @@ abstract class RDD[T: ClassTag](
   }
 
   /**
-   * Re-broadcast the rdd from executor side, this is used when the original broadcast data
-   * lost cases.
-   * Note: this will only broadcast the first element of the rdd.
-   */
-  private[spark] def reBroadcast(id: Long) {
-    assert(partitions.length == 1, s"broadcast rdd should" +
-      s" only have one partitions, but now ${partitions.length}!")
-    val bc = mapPartitions { iter =>
-      assert(iter.hasNext)
-      Iterator(SparkEnv.get.broadcastManager.newBroadcast[T](iter.next(), false, id, true))
-    }.collect().head
-    val callSite = sc.getCallSite
-    logInfo("Rebroadcast " + bc.id + " from " + callSite.shortForm)
-  }
-
-  /**
-   * Broadcast the single value in the rdd to the cluster from executor, returning a
+   * Broadcast the rdd to the cluster from executor, returning a
    * [[org.apache.spark.broadcast.Broadcast]] object for reading it in distributed functions.
    * The variable will be sent to each cluster only once.
    *
-   * Note: this will only broadcast the first element of the rdd.
+   * User should pass in a translate function to compute the broadcast value from the rdd.
    */
-  def broadcast(): Broadcast[T] = withScope {
-    assert(partitions.length == 1, s"broadcast rdd should" +
-      s" only have one partitions, but now ${partitions.length}!")
-    val id = sc.env.broadcastManager.newBroadcastId
-    val bc = mapPartitions { iter =>
-      assert(iter.hasNext)
-      Iterator(SparkEnv.get.broadcastManager.newBroadcast[T](iter.next(), false, id, true))
-    }.collect().head
-    SparkEnv.get.broadcastManager.addBroadcastRdd(id, this.asInstanceOf[RDD[Any]])
-    val callSite = sc.getCallSite
-    logInfo("Created broadcast " + bc.id + " from " + callSite.shortForm)
+  def broadcast[U: ClassTag](transFunc: Iterator[T] => U): Broadcast[U] = withScope {
+    val bc = if (partitions.size > 0) {
+      val id = sc.env.broadcastManager.newBroadcastId
+      val res = coalesce(1).mapPartitions { iter =>
+        Iterator(SparkEnv.get.broadcastManager.newBroadcast[U](transFunc(iter), false, id, true))
+      }.collect().head
+      SparkEnv.get.broadcastManager.registerReBroadcast(id,
+        ReBroadcast(this.asInstanceOf[RDD[Any]], transFunc.asInstanceOf[Iterator[Any] => Any]))
+      val callSite = sc.getCallSite
+      logInfo("Created executor side broadcast " + res.id + " from " + callSite.shortForm)
+      res
+    } else {
+      val res = SparkEnv.get.broadcastManager.newBroadcast[U](
+        transFunc(Array.empty[T].iterator), sc.isLocal)
+      val callSite = sc.getCallSite
+      logInfo("Created broadcast " + res.id + " from " + callSite.shortForm)
+      res
+    }
+
     sc.cleaner.foreach(_.registerBroadcastForCleanup(bc))
     bc
   }

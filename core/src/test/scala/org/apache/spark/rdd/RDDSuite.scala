@@ -49,9 +49,29 @@ class RDDSuite extends SparkFunSuite with SharedSparkContext {
   }
 
   test("executor broadcast") {
-    val nums = sc.makeRDD(Array(1), 1)
-    val b = nums.broadcast()
+    val nums = sc.makeRDD(Array(1, 2, 3, 4), 2)
+    val transFun = { iter: Iterator[Int] =>
+      if (iter.hasNext) {
+        iter.next()
+      } else {
+        10
+      }
+    }
+    val b = nums.broadcast(transFun)
     assert(b.value == 1)
+  }
+
+  test("executor broadcast --- empty rdd") {
+    val empty = sc.makeRDD(Array.empty[Int], 2)
+    val transFun = { iter: Iterator[Int] =>
+      if (iter.hasNext) {
+        iter.next()
+      } else {
+        10
+      }
+    }
+    val b = empty.broadcast(transFun)
+    assert(b.value == 10)
   }
 
   test("basic operations") {
