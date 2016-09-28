@@ -54,7 +54,7 @@ import org.apache.spark.util.io.{ChunkedByteBuffer, ChunkedByteBufferOutputStrea
  * @param id A unique identifier for the broadcast variable.
  * @param isExecutorSide A identifier for executor broadcast variable.
  * @param nBlocks how many blocks for executor broadcast.
-  */
+ */
 private[spark] class TorrentBroadcast[T: ClassTag](
     obj: T,
     id: Long,
@@ -115,7 +115,7 @@ private[spark] class TorrentBroadcast[T: ClassTag](
       TorrentBroadcast.blockifyObject(value, blockSize, SparkEnv.get.serializer, compressionCodec)
     blocks.zipWithIndex.foreach { case (block, i) =>
       val pieceId = BroadcastBlockId(id, "piece" + i)
-      blockManager.persistBroadcast(pieceId, block)
+      blockManager.persistBroadcastPiece(pieceId, block)
       val bytes = new ChunkedByteBuffer(block.duplicate())
       if (!blockManager.putBytes(pieceId, bytes, MEMORY_AND_DISK_SER, tellMaster = true)) {
         throw new SparkException(s"Failed to store $pieceId of $broadcastId in local BlockManager")
@@ -142,7 +142,7 @@ private[spark] class TorrentBroadcast[T: ClassTag](
           blocks(pid) = block
           releaseLock(pieceId)
         case None =>
-          bm.getRemoteBytes(pieceId).orElse(bm.getHdfsBytes(pieceId)) match {
+          bm.getRemoteBytes(pieceId).orElse(bm.getBroadcastPiece(pieceId)) match {
             case Some(b) =>
               // We found the block from remote executors/driver's BlockManager, so put the block
               // in this executor's BlockManager.
