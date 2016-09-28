@@ -91,7 +91,7 @@ private[spark] class TorrentBroadcast[T: ClassTag](
   def getNumBlocks: Int = numBlocks
 
   /** Total number of blocks this broadcast variable contains. */
-  private var numBlocks: Int = if (!isExecutorSide) writeBlocks(obj) else nBlocks.getOrElse(-1)
+  private val numBlocks: Int = if (!isExecutorSide) writeBlocks(obj) else nBlocks.getOrElse(-1)
 
   override protected def getValue() = {
     _value
