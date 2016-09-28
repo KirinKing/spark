@@ -23,7 +23,7 @@ import scala.collection.{mutable, Map}
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Codec
 import scala.language.implicitConversions
-import scala.reflect.{ClassTag, classTag}
+import scala.reflect.{classTag, ClassTag}
 
 import com.clearspring.analytics.stream.cardinality.HyperLogLogPlus
 import org.apache.hadoop.io.{BytesWritable, NullWritable, Text}
@@ -34,7 +34,7 @@ import org.apache.spark._
 import org.apache.spark.Partitioner._
 import org.apache.spark.annotation.{DeveloperApi, Since}
 import org.apache.spark.api.java.JavaRDD
-import org.apache.spark.broadcast.{Broadcast, ReBroadcast}
+import org.apache.spark.broadcast.{Broadcast, ReBroadcast, TorrentBroadcast, TransFunc}
 import org.apache.spark.internal.Logging
 import org.apache.spark.partial.BoundedDouble
 import org.apache.spark.partial.CountEvaluator
@@ -43,8 +43,7 @@ import org.apache.spark.partial.PartialResult
 import org.apache.spark.storage.{RDDBlockId, StorageLevel}
 import org.apache.spark.util.{BoundedPriorityQueue, Utils}
 import org.apache.spark.util.collection.OpenHashMap
-import org.apache.spark.util.random.{BernoulliCellSampler, BernoulliSampler, PoissonSampler,
-  SamplingUtils}
+import org.apache.spark.util.random.{BernoulliCellSampler, BernoulliSampler, PoissonSampler, SamplingUtils}
 
 /**
  * A Resilient Distributed Dataset (RDD), the basic abstraction in Spark. Represents an immutable,
@@ -921,20 +920,27 @@ abstract class RDD[T: ClassTag](
    *
    * User should pass in a translate function to compute the broadcast value from the rdd.
    */
-  def broadcast[U: ClassTag](transFunc: Iterator[T] => U): Broadcast[U] = withScope {
+  def broadcast[U: ClassTag](transFunc: TransFunc[T, U]): Broadcast[U] = withScope {
     val bc = if (partitions.size > 0) {
       val id = sc.env.broadcastManager.newBroadcastId
-      val res = coalesce(1).mapPartitions { iter =>
-        Iterator(SparkEnv.get.broadcastManager.newBroadcast[U](transFunc(iter), false, id, true))
+      val res = SparkEnv.get.broadcastManager.newBroadcast(
+        transFunc.transform(Array.empty[T]), false, id, true, transFunc)
+
+      val numBlocks = coalesce(1).mapPartitions { iter =>
+        val bc = SparkEnv.get.broadcastManager.newBroadcast(
+          transFunc.transform(iter.toArray), false, id)
+        val numBlocks = bc.asInstanceOf[TorrentBroadcast[U, T]].getNumBlocks()
+        Seq(numBlocks).iterator
       }.collect().head
-      SparkEnv.get.broadcastManager.registerReBroadcast(id,
-        ReBroadcast(this.asInstanceOf[RDD[Any]], transFunc.asInstanceOf[Iterator[Any] => Any]))
+      res.asInstanceOf[TorrentBroadcast[U, T]].setNumBlocks(numBlocks)
+
+      SparkEnv.get.broadcastManager.registerReBroadcast(id, ReBroadcast(this, transFunc))
       val callSite = sc.getCallSite
-      logInfo("Created executor side broadcast " + res.id + " from " + callSite.shortForm)
+      println("Created executor side broadcast " + res.id + " from " + callSite.shortForm)
       res
     } else {
-      val res = SparkEnv.get.broadcastManager.newBroadcast[U](
-        transFunc(Array.empty[T].iterator), sc.isLocal)
+      val res = SparkEnv.get.broadcastManager.newBroadcast(
+        transFunc.transform(Array.empty[T]), sc.isLocal)
       val callSite = sc.getCallSite
       logInfo("Created broadcast " + res.id + " from " + callSite.shortForm)
       res

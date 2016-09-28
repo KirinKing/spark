@@ -35,7 +35,7 @@ private[spark] class BroadcastManager(
   extends Logging {
 
   // Mapping from broadcast id to ReBroadcast of executor broadcast.
-  private val executorBroadcasts = new HashMap[Long, ReBroadcast]
+  private val executorBroadcasts = new HashMap[Long, Any]
 
   // a stage attempt that have already reBroadcast a rdd
   private val reBroadcasted = new mutable.HashSet[(Long, Int, Int)]
@@ -75,18 +75,28 @@ private[spark] class BroadcastManager(
   def newBroadcast[T: ClassTag](
       value_ : T,
       isLocal: Boolean,
+      id: Long
+      ): Broadcast[T] = {
+    broadcastFactory.newBroadcast[T](value_, isLocal, id)
+  }
+
+  // Called from driver to create broadcast with specified id
+  def newBroadcast[T: ClassTag, U: ClassTag](
+      value_ : T,
+      isLocal: Boolean,
       id: Long,
-      isExecutorSide: Boolean): Broadcast[T] = {
-    broadcastFactory.newBroadcast[T](value_, isLocal, id, isExecutorSide)
+      isExecutorSide: Boolean,
+      transFunc: TransFunc[U, T]): Broadcast[T] = {
+    broadcastFactory.newBroadcast[T, U](value_, isLocal, id, isExecutorSide, transFunc)
   }
 
   def unbroadcast(id: Long, removeFromDriver: Boolean, blocking: Boolean) {
     broadcastFactory.unbroadcast(id, removeFromDriver, blocking)
   }
 
-  def registerReBroadcast(
+  def registerReBroadcast[T: ClassTag, U: ClassTag](
       id: Long,
-      reBroadcast: ReBroadcast): Unit = {
+      reBroadcast: ReBroadcast[T, U]): Unit = {
     executorBroadcasts.put(id, reBroadcast)
   }
 
@@ -103,7 +113,10 @@ private[spark] class BroadcastManager(
         // only allowed recover once for a stage attempt
         if (!reBroadcasted.contains((id, stageId, stageAttemptId))) {
           reBroadcasted.add((id, stageId, stageAttemptId))
-          executorBroadcasts.get(id).reBroadcast(id)
+          executorBroadcasts.get(id) match {
+            case re: ReBroadcast[_, _] =>
+              re.reBroadcast(id)
+          }
         }
         // clear the reBroadcasted to avoid increase infinitly
         if (reBroadcasted.size > 10000) reBroadcasted.clear()
@@ -112,15 +125,27 @@ private[spark] class BroadcastManager(
   }
 }
 
-private[spark] case class ReBroadcast(
-    rdd: RDD[Any],
-    transFunc: Iterator[Any] => Any) extends Logging{
+private[spark] case class ReBroadcast[T: ClassTag, U: ClassTag](
+    rdd: RDD[T],
+    transFunc: TransFunc[T, U]) extends Logging{
   def reBroadcast(id: Long): Unit = {
+    // todo:
     val bc = rdd.coalesce(1).mapPartitions { iter =>
-      Iterator(SparkEnv.get.broadcastManager.newBroadcast[Any](transFunc(iter), false, id, true))
+      Iterator(SparkEnv.get.broadcastManager.newBroadcast(
+        transFunc.transform(iter.toArray), false, id))
     }.collect().head
     logWarning("Rebroadcast " + bc.id)
   }
+}
+
+
+/**
+ * Marker trait to identify the shape in which tuples are broadcasted. User must passed one
+ * TransFunc when executor side broadcast(rdd.broadcast), typical examples of this are
+ * identity (tuples remain unchanged) or hashed (tuples are converted into some hash index).
+ */
+trait TransFunc[T, U] extends Serializable {
+  def transform(rows: Array[T]): U
 }
 
 object BroadcastManager {

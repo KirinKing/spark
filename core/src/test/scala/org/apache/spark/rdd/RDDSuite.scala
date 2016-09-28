@@ -22,14 +22,14 @@ import java.io.{File, IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.reflect.ClassTag
-
 import com.esotericsoftware.kryo.KryoException
 import org.apache.hadoop.io.{LongWritable, Text}
 import org.apache.hadoop.mapred.{FileSplit, TextInputFormat}
-
 import org.apache.spark._
 import org.apache.spark.api.java.{JavaRDD, JavaSparkContext}
+import org.apache.spark.broadcast.TransFunc
 import org.apache.spark.rdd.RDDSuiteUtils._
+import org.apache.spark.storage.BroadcastBlockId
 import org.apache.spark.util.Utils
 
 class RDDSuite extends SparkFunSuite with SharedSparkContext {
@@ -50,25 +50,21 @@ class RDDSuite extends SparkFunSuite with SharedSparkContext {
 
   test("executor broadcast") {
     val nums = sc.makeRDD(Array(1, 2, 3, 4), 2)
-    val transFun = { iter: Iterator[Int] =>
-      if (iter.hasNext) {
-        iter.next()
-      } else {
-        10
+    val transFun = new TransFunc[Int, Int] {
+      override def transform(rows: Array[Int]): Int = {
+        if (rows.size > 0) rows.apply(0) else 10
       }
     }
     val b = nums.broadcast(transFun)
+    sc.env.blockManager.removeBroadcast(b.id, false)
+    sc.env.blockManager.removeBlock(BroadcastBlockId(b.id))
     assert(b.value == 1)
   }
 
   test("executor broadcast --- empty rdd") {
     val empty = sc.makeRDD(Array.empty[Int], 2)
-    val transFun = { iter: Iterator[Int] =>
-      if (iter.hasNext) {
-        iter.next()
-      } else {
-        10
-      }
+    val transFun = new TransFunc[Int, Int] {
+      override def transform(rows: Array[Int]): Int = 10
     }
     val b = empty.broadcast(transFun)
     assert(b.value == 10)
