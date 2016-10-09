@@ -83,13 +83,14 @@ class RDDSuite extends SparkFunSuite with SharedSparkContext {
       override def transform(rows: Array[Int]): Int = if (rows.size > 0) rows.reduce(_ + _) else 0
     }
     val b1 = nums.broadcast(transFun)
-    sc.env.blockManager.removeBroadcast(b1.id, false)
+    Thread.sleep(3000)
+    sc.env.blockManager.removeBroadcast(b1.id, true)
     assert(b1.value == 10)
 
     val b2 = nums.broadcast{ iter =>
       if (iter.hasNext) iter.reduce(_ + _) else 0
     }
-    sc.env.blockManager.removeBroadcast(b2.id, false)
+    sc.env.blockManager.removeBroadcast(b2.id, true)
     assert(b2.value == 10)
   }
 

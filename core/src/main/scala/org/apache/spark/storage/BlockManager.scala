@@ -650,6 +650,17 @@ private[spark] class BlockManager(
     blockInfoManager.releaseAllLocksForTask(taskAttemptId)
   }
 
+  def broadcastAvailable(id: Long, numBlocks: Int): Boolean = {
+    var res = true
+    for (pid <- Seq.range(0, numBlocks)) {
+      val pieceId = BroadcastBlockId(id, "piece" + pid)
+      if (getLocations(pieceId).size <= 0) {
+        res = false
+      }
+    }
+    res
+  }
+
   /**
    * Retrieve the given block if it exists, otherwise call the provided `makeIterator` method
    * to compute the block, persist it, and return its values.

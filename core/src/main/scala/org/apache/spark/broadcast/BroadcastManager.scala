@@ -17,16 +17,17 @@
 
 package org.apache.spark.broadcast
 
+import java.util.HashMap
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicLong
 
 import scala.reflect.ClassTag
-
 import org.apache.hadoop.fs.Path
-
-import org.apache.spark.{SecurityManager, SparkConf}
+import org.apache.spark.{SecurityManager, SparkConf, SparkEnv}
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
+import org.apache.spark.rdd.RDD
+import org.apache.spark.rpc.{RpcCallContext, RpcEndpoint, RpcEndpointRef, RpcEnv}
 import org.apache.spark.util.ShutdownHookManager
 
 private[spark] class BroadcastManager(
@@ -40,6 +41,8 @@ private[spark] class BroadcastManager(
   private val shutdownHook = addShutdownHook()
   private[spark] lazy val hdfsBackupDir =
     Option(new Path(conf.get("spark.broadcast.backup.dir", s"/tmp/spark/${conf.getAppId}_blocks")))
+  private val idToBackupRdd = new HashMap[Long, RDD[Int]]()
+  var driverEndpoint: RpcEndpointRef = null
 
   initialize()
 
@@ -109,6 +112,10 @@ private[spark] class BroadcastManager(
     broadcastFactory.unbroadcast(id, removeFromDriver, blocking)
   }
 
+  def registerBackupRdd(id: Long, backupRdd: RDD[Int]): Unit = {
+    idToBackupRdd.put(id, backupRdd)
+  }
+
   private def addShutdownHook(): AnyRef = {
     logDebug("Adding shutdown hook") // force eager creation of logger
     ShutdownHookManager.addShutdownHook(ShutdownHookManager.TEMP_DIR_SHUTDOWN_PRIORITY) { () =>
@@ -117,7 +124,26 @@ private[spark] class BroadcastManager(
     }
   }
 
+  def reBroadcast(id: Long, stageId: Int, stageAttemptId: Int): Boolean = {
+    driverEndpoint.askWithRetry[Boolean](RecoverBroadcast(id))
+  }
+
+  // This endpoint is used only for RPC
+  private[spark] class BroadcastManagerEndpoint(
+      override val rpcEnv: RpcEnv) extends RpcEndpoint with Logging {
+
+    override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
+      case RecoverBroadcast(id) =>
+        context.reply(true)
+    }
+  }
 }
+
+private[spark] case class ReBroadcast(rdd: RDD[Int]) extends Logging{
+  def reBroadcast(id: Long): Unit = {
+  }
+}
+
 
 /**
  * Marker trait to identify the shape in which tuples are broadcasted. This is used for
@@ -127,3 +153,5 @@ private[spark] class BroadcastManager(
 trait TransFunc[T, U] extends Serializable {
   def transform(rows: Array[T]): U
 }
+
+case class RecoverBroadcast(id: Long)

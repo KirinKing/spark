@@ -926,11 +926,13 @@ abstract class RDD[T: ClassTag](
       val id = sc.env.broadcastManager.newBroadcastId
 
       // first: write blocks to block manager from executor.
-      val nBlocks = coalesce(1).mapPartitions { iter =>
+      val backupRdd = coalesce(1).mapPartitions { iter =>
         val numBlocks =
           SparkEnv.get.broadcastManager.uploadBroadcast(transFunc.transform(iter.toArray), id)
         Seq(numBlocks).iterator
-      }.collect().head
+      }
+      SparkEnv.get.broadcastManager.registerBackupRdd(id, backupRdd)
+      val nBlocks = backupRdd.collect().head
 
       // then: create broadcast from driver, this will not write blocks
       val res = SparkEnv.get.broadcastManager.newExecutorBroadcast(
